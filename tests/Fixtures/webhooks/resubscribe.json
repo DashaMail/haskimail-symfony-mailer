@@ -1,0 +1,20 @@
+{
+  "event": "subscriptionchange",
+  "recipient": "ivan@example.com",
+  "email": "ivan@example.com",
+  "message_id": "",
+  "code": "",
+  "description": "",
+  "error": "",
+  "bounce_category": "",
+  "user_id": "48213",
+  "campaign_id": "",
+  "member_id": "0",
+  "event_time": "2026-10-07 14:30:15",
+  "event_time_utc": "2026-10-07 11:30:15",
+  "secret": "__SIGNATURE__",
+  "server_id": 11834,
+  "stream_id": "2081",
+  "SuppressionReason": "ManualSuppression",
+  "SuppressSending": "false"
+}

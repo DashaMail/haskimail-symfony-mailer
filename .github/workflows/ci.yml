@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }} / Symfony ${{ matrix.symfony }} ${{ matrix.dependencies }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '8.1', symfony: '6.4.*', dependencies: 'lowest' }
+          - { php: '8.2', symfony: '6.4.*', dependencies: 'highest' }
+          - { php: '8.2', symfony: '7.0.*', dependencies: 'highest' }
+          - { php: '8.3', symfony: '7.4.*', dependencies: 'highest' }
+          - { php: '8.4', symfony: '7.4.*', dependencies: 'highest' }
+          - { php: '8.4', symfony: '8.0.*', dependencies: 'highest' }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: flex
+
+      # QA tools run in the dedicated job below; dropping them keeps the matrix resolvable.
+      - name: Remove QA tools
+        run: composer remove --dev --no-update --no-interaction friendsofphp/php-cs-fixer infection/infection phpstan/phpstan phpstan/phpstan-phpunit phpstan/phpstan-strict-rules
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        env:
+          SYMFONY_REQUIRE: ${{ matrix.symfony }}
+        with:
+          dependency-versions: ${{ matrix.dependencies }}
+          composer-options: --with-all-dependencies
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit
+
+  quality:
+    name: Static analysis, code style, coverage & mutation testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: pcov
+
+      - uses: ramsey/composer-install@v3
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: PHP-CS-Fixer
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff
+        env:
+          PHP_CS_FIXER_IGNORE_ENV: 1
+
+      - name: PHPStan (level max, strict rules)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+
+      - name: PHPUnit with coverage
+        run: vendor/bin/phpunit --coverage-text --coverage-clover=coverage.xml
+
+      - name: Infection (mutation testing)
+        run: vendor/bin/infection --threads=max --no-progress --min-msi=90 --min-covered-msi=95
+
+      - name: Security audit
+        run: composer audit

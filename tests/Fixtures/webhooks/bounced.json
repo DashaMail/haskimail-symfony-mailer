@@ -1,0 +1,19 @@
+{
+  "event": "bounced",
+  "recipient": "old-address@example.com",
+  "email": "old-address@example.com",
+  "message_id": "a41d7c9e2b6f4e0d8c3b5a1f9e7d2c60",
+  "code": "550",
+  "description": "550 5.1.1 The email account that you tried to reach does not exist",
+  "error": "550 5.1.1 The email account that you tried to reach does not exist",
+  "bounce_category": "hrd",
+  "user_id": "48213",
+  "campaign_id": "orders",
+  "member_id": "0",
+  "event_time": "2026-10-07 14:30:15",
+  "event_time_utc": "2026-10-07 11:30:15",
+  "secret": "__SIGNATURE__",
+  "custom_vars": "{\"order_id\":\"1042\"}",
+  "server_id": 11834,
+  "stream_id": "2081"
+}

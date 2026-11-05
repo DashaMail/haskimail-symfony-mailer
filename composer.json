@@ -1,0 +1,87 @@
+{
+    "name": "haskimail/symfony-mailer",
+    "description": "Haskimail transport (HTTP API + SMTP) and webhook integration for Symfony Mailer",
+    "type": "symfony-bundle",
+    "keywords": [
+        "haskimail",
+        "mailer",
+        "symfony",
+        "transactional",
+        "email",
+        "webhook",
+        "transport"
+    ],
+    "homepage": "https://haskimail.ru/developer",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Haskimail",
+            "homepage": "https://haskimail.ru"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "psr/event-dispatcher": "^1",
+        "symfony/http-client": "^6.4 || ^7.0 || ^8.0",
+        "symfony/mailer": "^6.4 || ^7.0 || ^8.0"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.64",
+        "infection/infection": "^0.29",
+        "phpstan/phpstan": "^2.1",
+        "phpstan/phpstan-phpunit": "^2.0",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "phpunit/phpunit": "^10.5 || ^11.5",
+        "symfony/config": "^6.4 || ^7.0 || ^8.0",
+        "symfony/dependency-injection": "^6.4 || ^7.0 || ^8.0",
+        "symfony/framework-bundle": "^6.4 || ^7.0 || ^8.0",
+        "symfony/http-foundation": "^6.4 || ^7.0 || ^8.0",
+        "symfony/http-kernel": "^6.4 || ^7.0 || ^8.0",
+        "symfony/remote-event": "^6.4 || ^7.0 || ^8.0",
+        "symfony/webhook": "^6.4 || ^7.0 || ^8.0"
+    },
+    "suggest": {
+        "symfony/webhook": "To receive Haskimail delivery/engagement webhooks as Symfony RemoteEvents",
+        "symfony/framework-bundle": "To auto-register the transport factory and webhook parser via HaskimailMailerBundle"
+    },
+    "conflict": {
+        "symfony/http-foundation": "<6.4",
+        "symfony/webhook": "<6.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Haskimail\\SymfonyMailer\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Haskimail\\SymfonyMailer\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "infection/extension-installer": true
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "coverage": "XDEBUG_MODE=coverage phpunit --coverage-text",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "cs": "php-cs-fixer fix --dry-run --diff",
+        "cs-fix": "php-cs-fixer fix",
+        "infection": "infection --threads=max",
+        "check": [
+            "@cs",
+            "@analyse",
+            "@test"
+        ]
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.x-dev"
+        }
+    }
+}
