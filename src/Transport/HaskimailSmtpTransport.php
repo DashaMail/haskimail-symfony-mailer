@@ -11,6 +11,8 @@ declare(strict_types=1);
 
 namespace Haskimail\SymfonyMailer\Transport;
 
+use Haskimail\SymfonyMailer\Header\HaskimailDomainHeader;
+use Haskimail\SymfonyMailer\Header\HaskimailMessageIdHeader;
 use Haskimail\SymfonyMailer\Header\MessageStreamHeader;
 use Haskimail\SymfonyMailer\Header\TemplateHeader;
 use Haskimail\SymfonyMailer\Header\TemplateModelHeader;
@@ -43,6 +45,9 @@ final class HaskimailSmtpTransport extends EsmtpTransport
     public const METADATA_HEADER = 'X-HM-Metadata';
     public const NO_TRACK_OPENS_HEADER = 'X-HM-No-Track-Opens';
     public const NO_TRACK_CLICKS_HEADER = 'X-HM-No-Track-Click';
+    public const TRACK_OPENS_HEADER = 'X-HM-TrackOpens';
+    public const DOMAIN_HEADER = 'X-HM-Domain';
+    public const MESSAGE_ID_HEADER = 'X-HM-MessageID';
 
     private const COMMANDS_REQUIRING_TLS = ['AUTH', 'MAIL', 'RCPT', 'DATA'];
 
@@ -149,11 +154,29 @@ final class HaskimailSmtpTransport extends EsmtpTransport
                 case strtolower(TemplateHeader::NAME):
                 case strtolower(TemplateModelHeader::NAME):
                     throw new TransportException('Haskimail templates can only be sent with the API transport ("haskimail+api://").');
+                case strtolower(HaskimailDomainHeader::NAME):
+                    $headers->remove($name);
+                    $headers->addTextHeader(self::DOMAIN_HEADER, HeaderValue::raw($header));
+                    break;
+                case strtolower(HaskimailMessageIdHeader::NAME):
+                    $headers->remove($name);
+                    $headers->addTextHeader(self::MESSAGE_ID_HEADER, HeaderValue::raw($header));
+                    break;
                 case strtolower(TrackOpensHeader::NAME):
+                    // The SMTP relay can only enable open tracking via X-HM-TrackOpens (true) or
+                    // leave it off with X-HM-No-Track-Opens. Unlike the API, it cannot force open
+                    // tracking on when the server setting is off: report that "true" may be ignored.
+                    $headers->remove($name);
+                    if (HeaderValue::toBool($header)) {
+                        $headers->addTextHeader(self::TRACK_OPENS_HEADER, 'true');
+                    } else {
+                        $headers->addTextHeader(self::NO_TRACK_OPENS_HEADER, 'true');
+                    }
+                    break;
                 case strtolower(TrackLinksHeader::NAME):
                     $headers->remove($name);
                     if (!HeaderValue::toBool($header)) {
-                        $headers->addTextHeader(strtolower(TrackOpensHeader::NAME) === $name ? self::NO_TRACK_OPENS_HEADER : self::NO_TRACK_CLICKS_HEADER, 'true');
+                        $headers->addTextHeader(self::NO_TRACK_CLICKS_HEADER, 'true');
                     }
                     break;
             }

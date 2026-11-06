@@ -62,6 +62,12 @@ final class HaskimailApiTransport extends AbstractApiTransport
 
     private const MAX_ERROR_BODY_LENGTH = 512;
 
+    /** SMTP-only control headers that have no REST API equivalent and must not be sent to recipients. */
+    private const SMTP_ONLY_HEADERS = [
+        'x-haskimail-domain',
+        'x-haskimail-messageid',
+    ];
+
     private ?string $messageStream = null;
 
     public function __construct(
@@ -198,10 +204,19 @@ final class HaskimailApiTransport extends AbstractApiTransport
             throw new TransportException('Haskimail supports a single "From" address per email.');
         }
 
+        $to = self::excludeAddresses($envelope->getRecipients(), [...$cc, ...$bcc]);
+
+        // The API rejects an email without any visible recipient ("To"/"Cc") and would
+        // answer with an unclear error when every recipient is a blind copy: report a
+        // clear client-side problem instead of sending an empty "To".
+        if ([] === $to && [] === $cc) {
+            throw new TransportException('Haskimail requires at least one "To" or "Cc" recipient; move a Bcc address to "To" or "Cc" or set a recipient explicitly.');
+        }
+
         $payload = [
             // The visible From header; the envelope sender (bounce address) is managed by Haskimail.
             'From' => self::formatAddress($email->getFrom()[0] ?? $envelope->getSender()),
-            'To' => self::formatAddresses(self::excludeAddresses($envelope->getRecipients(), [...$cc, ...$bcc])),
+            'To' => self::formatAddresses($to),
         ];
 
         if ([] !== $cc) {
@@ -251,7 +266,7 @@ final class HaskimailApiTransport extends AbstractApiTransport
                 continue;
             }
 
-            if (\in_array($name, self::BYPASSED_HEADERS, true)) {
+            if (\in_array($name, self::BYPASSED_HEADERS, true) || \in_array($name, self::SMTP_ONLY_HEADERS, true)) {
                 continue;
             }
 
@@ -544,7 +559,7 @@ final class HaskimailApiTransport extends AbstractApiTransport
         return match ($statusCode) {
             401 => ' - check the server token (X-Haskimail-Server-Token)',
             403 => ' - the request IP address is not allowed by the account security settings',
-            413 => ' - the request is larger than 50 MB',
+            413 => ' - the request is larger than the limit (an email is limited to 10 MB, a batch to 50 MB)',
             default => '',
         };
     }

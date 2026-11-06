@@ -29,7 +29,7 @@ final class HaskimailRequestParserTest extends TestCase
 
         self::assertInstanceOf(MailerDeliveryEvent::class, $event);
         self::assertSame(MailerDeliveryEvent::BOUNCE, $event->getName());
-        self::assertSame('a41d7c9e2b6f4e0d8c3b5a1f9e7d2c60', $event->getId());
+        self::assertSame('haskimail-12d1bc82462ee1258c7f5650d58a9ee672f9ed79112126f7b4b98bfe8f03f531', $event->getId());
     }
 
     public function testSignatureMatchesAnIndependentlyComputedValue(): void
@@ -194,7 +194,7 @@ final class HaskimailRequestParserTest extends TestCase
         }
     }
 
-    public function testValidSignatureButUnsupportedEventIsRejectedWith406(): void
+    public function testValidSignatureButUnsupportedEventIsAcknowledged(): void
     {
         $payload = WebhookFixtures::load('delivered');
         $payload['event'] = 'teleported';
@@ -203,8 +203,24 @@ final class HaskimailRequestParserTest extends TestCase
             (new HaskimailRequestParser())->parse(self::request($payload), WebhookFixtures::SIGNING_KEY);
             self::fail('The webhook should have been rejected.');
         } catch (RejectWebhookException $e) {
-            self::assertSame(406, $e->getStatusCode());
+            self::assertSame(200, $e->getStatusCode());
             self::assertStringContainsString('teleported', $e->getMessage());
+        }
+    }
+
+    public function testUnsupportedEventSignatureFailureWins(): void
+    {
+        // A signature failure (403) is always reported before the unknown-event acknowledgment:
+        // otherwise an authentic event could be acknowledged while its redelivery was still needed.
+        $payload = WebhookFixtures::load('delivered');
+        $payload['event'] = 'teleported';
+        $payload['secret'] = str_repeat('0', 32);
+
+        try {
+            (new HaskimailRequestParser())->parse(self::request($payload), WebhookFixtures::SIGNING_KEY);
+            self::fail('The webhook should have been rejected.');
+        } catch (RejectWebhookException $e) {
+            self::assertSame(403, $e->getStatusCode());
         }
     }
 

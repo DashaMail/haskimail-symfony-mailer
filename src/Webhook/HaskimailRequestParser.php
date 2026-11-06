@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace Haskimail\SymfonyMailer\Webhook;
 
 use Haskimail\SymfonyMailer\RemoteEvent\HaskimailPayloadConverter;
+use Haskimail\SymfonyMailer\RemoteEvent\UnsupportedEventException;
 use Symfony\Component\HttpFoundation\ChainRequestMatcher;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestMatcher\IpsRequestMatcher;
@@ -93,6 +94,10 @@ final class HaskimailRequestParser extends AbstractRequestParser
 
         try {
             return $this->converter->convert($payload);
+        } catch (UnsupportedEventException $e) {
+            // An authentic event of a not-yet-known type: acknowledge it (200) so Haskimail
+            // stops redelivering, while the raw payload stays in the rejected log.
+            throw new RejectWebhookException(200, $e->getMessage(), $e);
         } catch (ParseException $e) {
             throw new RejectWebhookException(406, $e->getMessage(), $e);
         }

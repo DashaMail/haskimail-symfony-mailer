@@ -50,10 +50,14 @@ final class HaskimailApiException extends HttpTransportException
     public const ERROR_SENDER_NOT_CONFIRMED = 52;
     /** Internal Haskimail error. */
     public const ERROR_INTERNAL = 100;
-    /** Invalid field (test mode) or invalid batch package. */
+    /** Invalid batch package. */
     public const ERROR_INVALID_PACKAGE = 300;
     /** Sender not confirmed (account under moderation). */
     public const ERROR_MODERATION_SENDER = 400;
+    /** Invalid field value, reported only in test mode (HASKIMAIL_API_TEST). */
+    public const ERROR_INVALID_FIELD = 403;
+    /** Forbidden attachment type, reported only in test mode (HASKIMAIL_API_TEST). */
+    public const ERROR_FORBIDDEN_ATTACHMENT_TYPE = 411;
     /** Recipient not confirmed (account under moderation). */
     public const ERROR_MODERATION_RECIPIENT = 412;
     /** Template not found. */

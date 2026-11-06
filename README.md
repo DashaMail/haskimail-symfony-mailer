@@ -9,7 +9,7 @@
 | Тег (`TagHeader`) и метаданные (`MetadataHeader`) | ✓ | ✓ |
 | Выбор канала (MessageStream) на каждое письмо | ✓ | — (логин SMTP привязан к каналу) |
 | Шаблоны Haskimail (`/email/withTemplate`) | ✓ | — |
-| Включить/выключить трекинг открытий и кликов | ✓ | только выключить |
+| Включить/выключить трекинг открытий и кликов | ✓ | открытия — включить/выключить, клики — только выключить |
 | Синхронная валидация и коды ошибок API | ✓ | — (ошибки приходят позже баунсами) |
 
 Совместимость: PHP 8.1+, Symfony 6.4 / 7.x / 8.x.
@@ -182,13 +182,17 @@ final class HaskimailWebhookConsumer implements ConsumerInterface
 | `opened` | `MailerEngagementEvent::OPEN` |
 | `clicked` | `MailerEngagementEvent::CLICK` |
 | `subscriptionchange`, `SuppressSending: true` | `MailerEngagementEvent::UNSUBSCRIBE` |
+| `subscriptionchange`, `SuppressSending: true`, `SuppressionReason: HardBounce` | `RemoteEvent` с именем `HaskimailPayloadConverter::HARD_BOUNCE` |
 | `subscriptionchange`, `SuppressSending: false` | `RemoteEvent` с именем `HaskimailPayloadConverter::RESUBSCRIBE` |
 
-У всех событий: `getId()` — ID письма (одинаковый для delivered, opened, clicked одного письма, поэтому не используйте его как ключ дедупликации), `getRecipientEmail()`, `getDate()` (по `event_time_utc`), `getTags()` — тег письма, `getMetadata()` — метаданные из `custom_vars`. Полный исходный JSON — в `getPayload()`: там `bounce_category` (`hrd`, `sft`, `blk`, `spm`), `url_original`, `SuppressionReason` и другие поля. Для событий без письма (ручное изменение списка подавления) ID стабильно вычисляется из типа события, адреса и времени.
+`bounced` с `bounce_category: sft` (мягкий возврат) приходит как `MailerDeliveryEvent::DEFERRED`, а не `BOUNCE`.
+
+У всех событий: `getId()` — стабильный ключ из `event`, `message_id`, `recipient` и времени события (пригоден для дедупликации), `getRecipientEmail()`, `getDate()` (по `event_time_utc`), `getTags()` — тег письма, `getMetadata()` — метаданные из `custom_vars`. Полный исходный JSON — в `getPayload()`: там `bounce_category` (`hrd`, `sft`, `blk`, `spm`), `url_original`, `SuppressionReason` и другие поля.
 
 **Безопасность.**
 
 - Каждое событие проверяется по подписи `md5(recipient . message_id . ключ)` через `hash_equals`; поддельные запросы получают 403, и Haskimail их не повторяет.
+- Событие с верной подписью, но неизвестным типом подтверждается статусом 200: Haskimail прекращает его повторять, а исходный JSON сохраняется в журнале отклонённых вебхуков, поэтому ничего не теряется.
 - Если ключ не задан, парсер отвечает 500: Haskimail повторяет 5xx до 60 раз раз в минуту, поэтому события не теряются, пока вы исправляете конфигурацию.
 - Поле `secret` удаляется из `getPayload()`, чтобы подпись не попала в логи.
 - Ограничение схемы Haskimail: подписаны только адрес и ID письма, тип события и время не подписаны. Перехваченное событие можно повторить или превратить в другое событие того же письма, и проверка времени от этого не защитит. Поэтому держите ключ в секрете, принимайте вебхуки только по HTTPS и делайте обработку идемпотентной. Дополнительно можно ограничить IP-адреса отправителя:
@@ -244,6 +248,19 @@ $mailer = new Mailer((new HaskimailApiTransport('SERVER_TOKEN'))->setMessageStre
 SMTP-транспорт никогда не отправляет логин, пароль и письмо без шифрования: если сервер не предложил STARTTLS (например, при атаке на понижение), отправка прерывается до команды `AUTH`. Это работает на всех поддерживаемых версиях Symfony; на 7.3+ дополнительно включается встроенный `setRequireTls(true)`.
 
 Теги и метаданные, которые добавляют слушатели `MessageEvent` (в том числе `framework.mailer.headers`), тоже конвертируются в `X-HM-*`.
+
+Дополнительно для SMTP доступны выбор домена DKIM и внутренний ID письма:
+
+```php
+use Haskimail\SymfonyMailer\Header\HaskimailDomainHeader;
+use Haskimail\SymfonyMailer\Header\HaskimailMessageIdHeader;
+
+$email->getHeaders()
+    ->add(new HaskimailDomainHeader('example.com'))      // X-HM-Domain
+    ->add(new HaskimailMessageIdHeader('order-1042'));   // X-HM-MessageID
+```
+
+`X-HM-MessageID` задаёт внутренний MessageID, который вернётся в вебхуках и логах письма, — так письмо, отправленное по SMTP, можно связать с его событиями. Через API эти два заголовка игнорируются: API возвращает свой `MessageID`, а домен выбирается по `From`.
 
 ## Разработка
 

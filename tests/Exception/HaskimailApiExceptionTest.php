@@ -33,6 +33,15 @@ final class HaskimailApiExceptionTest extends TestCase
         self::assertSame($previous, $exception->getPrevious());
     }
 
+    public function testTestModeErrorCodesAreNotRetryable(): void
+    {
+        $invalidField = new HaskimailApiException('x', new MockResponse(), HaskimailApiException::ERROR_INVALID_FIELD, '', 422);
+        $forbiddenAttachment = new HaskimailApiException('x', new MockResponse(), HaskimailApiException::ERROR_FORBIDDEN_ATTACHMENT_TYPE, '', 422);
+
+        self::assertFalse($invalidField->isRetryable());
+        self::assertFalse($forbiddenAttachment->isRetryable());
+    }
+
     /**
      * @return iterable<string, array{int, int, bool}>
      */

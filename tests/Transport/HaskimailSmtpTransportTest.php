@@ -11,6 +11,8 @@ declare(strict_types=1);
 
 namespace Haskimail\SymfonyMailer\Tests\Transport;
 
+use Haskimail\SymfonyMailer\Header\HaskimailDomainHeader;
+use Haskimail\SymfonyMailer\Header\HaskimailMessageIdHeader;
 use Haskimail\SymfonyMailer\Header\MessageStreamHeader;
 use Haskimail\SymfonyMailer\Header\TemplateHeader;
 use Haskimail\SymfonyMailer\Header\TemplateModelHeader;
@@ -153,13 +155,51 @@ final class HaskimailSmtpTransportTest extends TestCase
         self::assertSame(['X-HM-No-Track-Opens' => 'true', 'X-HM-No-Track-Click' => 'true'], self::headerValues($headers));
     }
 
+    public function testEnabledOpenTrackingIsEmittedOverSmtp(): void
+    {
+        // The SMTP relay can only enable open tracking via X-HM-TrackOpens (true).
+        $headers = (new Headers())->add(new TrackOpensHeader(true))->add(new TrackLinksHeader(true));
+
+        HaskimailSmtpTransport::convertHeaders($headers);
+
+        self::assertSame(['X-HM-TrackOpens' => 'true'], self::headerValues($headers));
+    }
+
+    public function testEnabledLinkTrackingFallsBackToTheServerSetting(): void
+    {
+        // Link tracking cannot be forced on over SMTP: only its opt-out header exists.
+        $headers = (new Headers())->add(new TrackLinksHeader(true));
+
+        HaskimailSmtpTransport::convertHeaders($headers);
+
+        self::assertSame([], self::headerValues($headers));
+    }
+
+    public function testDomainHeaderIsConverted(): void
+    {
+        $headers = (new Headers())->add(new HaskimailDomainHeader('example.com'));
+
+        HaskimailSmtpTransport::convertHeaders($headers);
+
+        self::assertSame(['X-HM-Domain' => 'example.com'], self::headerValues($headers));
+    }
+
+    public function testMessageIdHeaderIsConverted(): void
+    {
+        $headers = (new Headers())->add(new HaskimailMessageIdHeader('test-123-abc-777'));
+
+        HaskimailSmtpTransport::convertHeaders($headers);
+
+        self::assertSame(['X-HM-MessageID' => 'test-123-abc-777'], self::headerValues($headers));
+    }
+
     public function testEnabledTrackingFallsBackToTheServerSetting(): void
     {
         $headers = (new Headers())->add(new TrackOpensHeader(true))->addTextHeader(TrackLinksHeader::NAME, 'yes');
 
         HaskimailSmtpTransport::convertHeaders($headers);
 
-        self::assertSame([], self::headerValues($headers));
+        self::assertSame(['X-HM-TrackOpens' => 'true'], self::headerValues($headers));
     }
 
     public function testInvalidTrackingValueIsRejected(): void

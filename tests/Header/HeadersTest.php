@@ -11,6 +11,8 @@ declare(strict_types=1);
 
 namespace Haskimail\SymfonyMailer\Tests\Header;
 
+use Haskimail\SymfonyMailer\Header\HaskimailDomainHeader;
+use Haskimail\SymfonyMailer\Header\HaskimailMessageIdHeader;
 use Haskimail\SymfonyMailer\Header\MessageStreamHeader;
 use Haskimail\SymfonyMailer\Header\TemplateHeader;
 use Haskimail\SymfonyMailer\Header\TemplateModelHeader;
@@ -34,6 +36,43 @@ final class HeadersTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
 
         new MessageStreamHeader(' ');
+    }
+
+    public function testDomainHeader(): void
+    {
+        $header = new HaskimailDomainHeader(' example.com ');
+
+        self::assertSame('X-Haskimail-Domain', $header->getName());
+        self::assertSame('example.com', $header->getValue());
+    }
+
+    public function testDomainHeaderRejectsBlankValues(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new HaskimailDomainHeader(' ');
+    }
+
+    public function testMessageIdHeader(): void
+    {
+        $header = new HaskimailMessageIdHeader(' test-123 ');
+
+        self::assertSame('X-Haskimail-MessageID', $header->getName());
+        self::assertSame('test-123', $header->getValue());
+    }
+
+    public function testMessageIdHeaderRejectsHeaderInjection(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new HaskimailMessageIdHeader("x\r\nBcc: evil@example.com");
+    }
+
+    public function testMessageIdHeaderRejectsBlankValues(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new HaskimailMessageIdHeader(' ');
     }
 
     public function testTrackingHeaders(): void

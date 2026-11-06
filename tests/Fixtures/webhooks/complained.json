@@ -1,14 +1,19 @@
 {
-  "event": "COMPLAINED",
-  "message_id": "883953f4-6105-42a2-a16a-77a8eac79483",
-  "campaign_id": "Test",
-  "custom_vars": {
-    "a_key": "a_value",
-    "b_key": "b_value"
-  },
-  "server_id": 23,
-  "stream_id": 25,
-  "recipient": "ivan@example.com",
-  "event_time": "2019-11-05 16:33:54",
-  "secret": "__SIGNATURE__"
+  "event": "complained",
+  "recipient": "angry@example.com",
+  "email": "angry@example.com",
+  "message_id": "a41d7c9e2b6f4e0d8c3b5a1f9e7d2c60",
+  "code": "",
+  "description": "",
+  "error": "",
+  "bounce_category": "",
+  "user_id": "48213",
+  "campaign_id": "orders",
+  "member_id": "0",
+  "event_time": "2026-10-07 14:30:15",
+  "event_time_utc": "2026-10-07 11:30:15",
+  "secret": "__SIGNATURE__",
+  "custom_vars": "{\"order_id\":\"1042\"}",
+  "server_id": 11834,
+  "stream_id": "2081"
 }

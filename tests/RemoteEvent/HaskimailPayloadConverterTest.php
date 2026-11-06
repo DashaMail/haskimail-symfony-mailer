@@ -36,7 +36,7 @@ final class HaskimailPayloadConverterTest extends TestCase
 
         self::assertInstanceOf(MailerDeliveryEvent::class, $event);
         self::assertSame(MailerDeliveryEvent::BOUNCE, $event->getName());
-        self::assertSame('a41d7c9e2b6f4e0d8c3b5a1f9e7d2c60', $event->getId());
+        self::assertSame('haskimail-12d1bc82462ee1258c7f5650d58a9ee672f9ed79112126f7b4b98bfe8f03f531', $event->getId());
         self::assertSame('old-address@example.com', $event->getRecipientEmail());
         self::assertSame('550 5.1.1 The email account that you tried to reach does not exist', $event->getReason());
         self::assertSame(['orders'], $event->getTags());
@@ -84,10 +84,9 @@ final class HaskimailPayloadConverterTest extends TestCase
         $event = $this->converter->convert(WebhookFixtures::load('complained'));
 
         self::assertInstanceOf(MailerEngagementEvent::class, $event);
-        self::assertSame(['a_key' => 'a_value', 'b_key' => 'b_value'], $event->getMetadata());
-        self::assertSame(['Test'], $event->getTags());
-        // No "event_time_utc": "event_time" is Moscow time (UTC+3).
-        self::assertSame('2019-11-05T13:33:54+00:00', $event->getDate()->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM));
+        self::assertSame(['order_id' => '1042'], $event->getMetadata());
+        self::assertSame(['orders'], $event->getTags());
+        self::assertSame('2026-10-07T11:30:15+00:00', $event->getDate()->format(\DATE_ATOM));
     }
 
     public function testClickPayloadKeepsUrls(): void
@@ -111,6 +110,16 @@ final class HaskimailPayloadConverterTest extends TestCase
         self::assertNotSame($first->getId(), $this->converter->convert($payload)->getId());
     }
 
+    public function testMessageIdIsNotDedupedIntoAGlobalId(): void
+    {
+        $payload = WebhookFixtures::load('delivered');
+        $id = $this->converter->convert($payload)->getId();
+
+        // Тот же message_id, но другое событие и время -> разный ID (общий ключ дедупликации).
+        $opened = ['event' => 'opened', 'event_time_utc' => '2026-10-07 11:30:16'] + $payload;
+        self::assertNotSame($id, $this->converter->convert($opened)->getId());
+    }
+
     public function testDerivedIdsDependOnEveryComponent(): void
     {
         $base = WebhookFixtures::load('resubscribe');
@@ -122,10 +131,11 @@ final class HaskimailPayloadConverterTest extends TestCase
         $ids[] = $this->converter->convert(['event' => 'delivered', 'campaign_id' => ''] + $base)->getId();
         $ids[] = $this->converter->convert(['recipient' => 'other@example.com'] + $base)->getId();
         $ids[] = $this->converter->convert(['event_time' => '2026-10-07 14:30:16'] + $base)->getId();
+        $ids[] = $this->converter->convert(['message_id' => 'a41d7c9e2b6f4e0d8c3b5a1f9e7d2c60'] + $base)->getId();
 
         self::assertSame($ids[0], $ids[1]);
-        self::assertCount(4, array_unique($ids));
-        self::assertSame('haskimail-'.hash('sha256', "subscriptionchange\0ivan@example.com\0".'2026-10-07 14:30:15'), $id);
+        self::assertCount(5, array_unique($ids));
+        self::assertSame('haskimail-'.hash('sha256', "subscriptionchange\0\0ivan@example.com\0".'2026-10-07 14:30:15'), $id);
     }
 
     public function testRecipientIsTrimmed(): void
@@ -149,6 +159,53 @@ final class HaskimailPayloadConverterTest extends TestCase
 
         self::assertInstanceOf(MailerDeliveryEvent::class, $event);
         self::assertSame('description', $event->getReason());
+    }
+
+    public function testSoftBounceIsDeferred(): void
+    {
+        $payload = WebhookFixtures::load('bounced');
+        $payload['bounce_category'] = 'sft';
+
+        $event = $this->converter->convert($payload);
+
+        self::assertInstanceOf(MailerDeliveryEvent::class, $event);
+        self::assertSame(MailerDeliveryEvent::DEFERRED, $event->getName());
+        self::assertSame($payload['description'], $event->getReason());
+    }
+
+    public function testHardBounceStaysBounce(): void
+    {
+        $payload = WebhookFixtures::load('bounced');
+        $payload['bounce_category'] = 'hrd';
+
+        $event = $this->converter->convert($payload);
+
+        self::assertInstanceOf(MailerDeliveryEvent::class, $event);
+        self::assertSame(MailerDeliveryEvent::BOUNCE, $event->getName());
+    }
+
+    public function testHardBounceSuppressionIsNotAnUnsubscribe(): void
+    {
+        $payload = WebhookFixtures::load('subscriptionchange');
+        $payload['SuppressSending'] = 'true';
+        $payload['SuppressionReason'] = 'HardBounce';
+
+        $event = $this->converter->convert($payload);
+
+        self::assertSame(RemoteEvent::class, $event::class);
+        self::assertSame(HaskimailPayloadConverter::HARD_BOUNCE, $event->getName());
+    }
+
+    public function testSpamComplaintSuppressionIsStillAnUnsubscribe(): void
+    {
+        $payload = WebhookFixtures::load('subscriptionchange');
+        $payload['SuppressSending'] = 'true';
+        $payload['SuppressionReason'] = 'SpamComplaint';
+
+        $event = $this->converter->convert($payload);
+
+        self::assertInstanceOf(MailerEngagementEvent::class, $event);
+        self::assertSame(MailerEngagementEvent::UNSUBSCRIBE, $event->getName());
     }
 
     public function testManualUnsubscribeWithoutMessageId(): void
@@ -275,7 +332,7 @@ final class HaskimailPayloadConverterTest extends TestCase
         $payload = WebhookFixtures::load('delivered');
         $payload['message_id'] = 12345;
 
-        self::assertSame('12345', $this->converter->convert($payload)->getId());
+        self::assertSame('haskimail-6eaa01e50c634895bb0b98f83ce8153a430bd65c480df8dc12806314859f1aad', $this->converter->convert($payload)->getId());
     }
 
     /**

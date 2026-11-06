@@ -12,6 +12,8 @@ declare(strict_types=1);
 namespace Haskimail\SymfonyMailer\Tests\Transport;
 
 use Haskimail\SymfonyMailer\Exception\HaskimailApiException;
+use Haskimail\SymfonyMailer\Header\HaskimailDomainHeader;
+use Haskimail\SymfonyMailer\Header\HaskimailMessageIdHeader;
 use Haskimail\SymfonyMailer\Header\MessageStreamHeader;
 use Haskimail\SymfonyMailer\Header\TemplateHeader;
 use Haskimail\SymfonyMailer\Header\TemplateModelHeader;
@@ -223,8 +225,30 @@ final class HaskimailApiTransportTest extends TestCase
     {
         $this->expectException(TransportException::class);
         $this->expectExceptionMessage('single "From" address');
-
         $this->createTransport()->send((new Email())->from('a@example.com', 'b@example.com')->sender('a@example.com')->to('c@example.com')->text('Hi'));
+    }
+
+    public function testAllRecipientsInBccAreRefused(): void
+    {
+        $email = (new Email())->from('a@example.com')->bcc('hidden@example.com')->text('Hi');
+
+        $this->expectException(TransportException::class);
+        $this->expectExceptionMessage('at least one "To" or "Cc" recipient');
+
+        $this->createTransport()->send($email);
+    }
+
+    public function testBccOnlyIsAllowed(): void
+    {
+        // Cc counts as a visible recipient: the API accepts To being empty when Cc is set.
+        $email = (new Email())->from('a@example.com')->cc('visible@example.com')->bcc('hidden@example.com')->text('Hi');
+
+        $this->createTransport()->send($email);
+
+        $payload = $this->requests[0]['payload'];
+        self::assertSame('', $payload['To']);
+        self::assertSame('visible@example.com', $payload['Cc']);
+        self::assertSame('hidden@example.com', $payload['Bcc']);
     }
 
     /**
@@ -478,6 +502,19 @@ final class HaskimailApiTransportTest extends TestCase
         self::assertSame('приветствие', $payload['TemplateAlias']);
         self::assertSame(['{{имя}}' => 'Иван'], $payload['TemplateModel']);
         self::assertSame('поток', $payload['MessageStream']);
+    }
+
+    public function testSmtpOnlyHeadersAreIgnoredByTheApiTransport(): void
+    {
+        $email = (new Email())->from('a@example.com')->to('b@example.com')->text('x');
+        $email->getHeaders()
+            ->add(new HaskimailDomainHeader('example.com'))
+            ->add(new HaskimailMessageIdHeader('test-123'));
+
+        $this->createTransport()->send($email);
+
+        self::assertArrayNotHasKey('Headers', $this->requests[0]['payload']);
+        self::assertArrayNotHasKey('X-Haskimail-Domain', $this->requests[0]['payload']);
     }
 
     public function testFileAttachmentIsRead(): void
@@ -738,7 +775,7 @@ final class HaskimailApiTransportTest extends TestCase
     public static function provideStatusHints(): iterable
     {
         yield [403, 'IP address is not allowed'];
-        yield [413, 'larger than 50 MB'];
+        yield [413, 'limited to 10 MB'];
     }
 
     public function testLongInvalidBodiesAreTruncated(): void

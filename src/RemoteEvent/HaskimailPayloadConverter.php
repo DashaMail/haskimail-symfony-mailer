@@ -24,11 +24,13 @@ use Symfony\Component\RemoteEvent\RemoteEvent;
  * | Haskimail "event"                        | RemoteEvent                                 |
  * |------------------------------------------|---------------------------------------------|
  * | delivered                                | MailerDeliveryEvent::DELIVERED              |
- * | bounced                                  | MailerDeliveryEvent::BOUNCE (reason = text) |
+ * | bounced (bounce_category != "sft")       | MailerDeliveryEvent::BOUNCE (reason = text) |
+ * | bounced (bounce_category == "sft")       | MailerDeliveryEvent::DEFERRED               |
  * | complained                               | MailerEngagementEvent::SPAM                 |
  * | opened                                   | MailerEngagementEvent::OPEN                 |
  * | clicked                                  | MailerEngagementEvent::CLICK                |
  * | subscriptionchange, SuppressSending=true | MailerEngagementEvent::UNSUBSCRIBE          |
+ * | subscriptionchange, SuppressSending=true, SuppressionReason=HardBounce | RemoteEvent named self::HARD_BOUNCE |
  * | subscriptionchange, SuppressSending=false| RemoteEvent named self::RESUBSCRIBE         |
  *
  * The original payload is always available through RemoteEvent::getPayload()
@@ -40,6 +42,9 @@ final class HaskimailPayloadConverter implements PayloadConverterInterface
 {
     /** Name of the event emitted when an address is removed from the suppression list. */
     public const RESUBSCRIBE = 'resubscribe';
+
+    /** Name of the event emitted when an address is suppressed by a hard bounce. */
+    public const HARD_BOUNCE = 'hard_bounce';
 
     /** Timezone of the "event_time" field. */
     private const HASKIMAIL_TIMEZONE = 'Europe/Moscow';
@@ -62,9 +67,11 @@ final class HaskimailPayloadConverter implements PayloadConverterInterface
             'opened' => new MailerEngagementEvent(MailerEngagementEvent::OPEN, $id, $payload),
             'clicked' => new MailerEngagementEvent(MailerEngagementEvent::CLICK, $id, $payload),
             'subscriptionchange' => self::isSuppressed($payload)
-                ? new MailerEngagementEvent(MailerEngagementEvent::UNSUBSCRIBE, $id, $payload)
+                ? (self::isHardBounce($payload)
+                    ? new RemoteEvent(self::HARD_BOUNCE, $id, $payload)
+                    : new MailerEngagementEvent(MailerEngagementEvent::UNSUBSCRIBE, $id, $payload))
                 : new RemoteEvent(self::RESUBSCRIBE, $id, $payload),
-            default => throw new ParseException(\sprintf('Unsupported Haskimail event "%s".', $type)),
+            default => throw new UnsupportedEventException(\sprintf('Unsupported Haskimail event "%s".', $type)),
         };
 
         if (!$event instanceof AbstractMailerEvent) {
@@ -88,7 +95,14 @@ final class HaskimailPayloadConverter implements PayloadConverterInterface
      */
     private static function createBounce(string $id, array $payload): MailerDeliveryEvent
     {
-        $event = new MailerDeliveryEvent(MailerDeliveryEvent::BOUNCE, $id, $payload);
+        // A soft bounce ("sft") is a temporary delivery problem: report DEFERRED, not BOUNCE,
+        // so consumers do not treat a working address as permanently dead.
+        $type = \is_string($payload['bounce_category'] ?? null)
+            && 'sft' === strtolower(trim($payload['bounce_category']))
+            ? MailerDeliveryEvent::DEFERRED
+            : MailerDeliveryEvent::BOUNCE;
+
+        $event = new MailerDeliveryEvent($type, $id, $payload);
         $event->setReason(self::getBounceReason($payload));
 
         return $event;
@@ -136,14 +150,13 @@ final class HaskimailPayloadConverter implements PayloadConverterInterface
         if (!\is_string($messageId)) {
             throw new ParseException('The "message_id" field of the Haskimail webhook payload must be a string.');
         }
-        if ('' !== $messageId) {
-            return $messageId;
-        }
 
-        // Events not tied to a message (manual suppression changes): derive a stable ID for de-duplication.
+        // The documentation defines the deduplication key as
+        // event + message_id + recipient + event_time: every delivery with its own
+        // message_id must keep a distinct id, not collapse onto the message's common ID.
         $time = $payload['event_time_utc'] ?? $payload['event_time'] ?? '';
 
-        return 'haskimail-'.hash('sha256', $type."\0".$recipient."\0".(\is_string($time) ? $time : ''));
+        return 'haskimail-'.hash('sha256', $type."\0".$messageId."\0".$recipient."\0".(\is_string($time) ? $time : ''));
     }
 
     /**
@@ -212,6 +225,19 @@ final class HaskimailPayloadConverter implements PayloadConverterInterface
             \is_string($value) && 'false' === strtolower($value) => false,
             default => throw new ParseException('The "SuppressSending" field of a Haskimail "subscriptionchange" event must be "true" or "false".'),
         };
+    }
+
+    /**
+     * A hard bounce is a delivery failure, not an unsubscribe: expose it as its own
+     * event so consumers do not mistake it for a user choice.
+     *
+     * @param array<mixed> $payload
+     */
+    private static function isHardBounce(array $payload): bool
+    {
+        $reason = $payload['SuppressionReason'] ?? null;
+
+        return \is_string($reason) && 0 === strcasecmp($reason, 'HardBounce');
     }
 
     /**
