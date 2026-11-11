@@ -13,6 +13,10 @@
     ],
     "homepage": "https://haskimail.ru/developer",
     "license": "MIT",
+    "support": {
+        "issues": "https://github.com/DashaMail/haskimail-symfony-mailer/issues",
+        "source": "https://github.com/DashaMail/haskimail-symfony-mailer"
+    },
     "authors": [
         {
             "name": "Haskimail",
